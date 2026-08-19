@@ -49,8 +49,8 @@ interface SycronContextType {
   isAuthenticated: boolean;
   currentUser: User;
   setCurrentUser: React.Dispatch<React.SetStateAction<User>>;
-  login: (email: string, pass: string) => boolean;
-  register: (name: string, email: string, phone: string, pass: string, terms: boolean) => boolean;
+  login: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
+  register: (name: string, email: string, phone: string, pass: string, terms: boolean) => Promise<{ success: boolean; error?: string }>;
   loginWithGoogle: () => Promise<void>;
   logout: () => void;
   switchUserRole: (role: UserRole) => void;
@@ -130,6 +130,28 @@ interface SycronContextType {
 
 const SycronContext = createContext<SycronContextType | undefined>(undefined);
 
+type LocalAccount = { id: string; name: string; email: string; phone: string; passwordHash: string; createdAt: string };
+
+const localAccountsKey = 'sycron.local.accounts';
+const localSessionKey = 'sycron.local.session';
+const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
+const hashPassword = async (password: string) => {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+};
+
+const readLocalAccounts = (): LocalAccount[] => {
+  try { return JSON.parse(localStorage.getItem(localAccountsKey) || '[]') as LocalAccount[]; }
+  catch { return []; }
+};
+
+const asUser = (account: LocalAccount): User => ({
+  id: account.id, name: account.name, email: account.email, phone: account.phone,
+  role: 'Contributor', region: '', plan: 'FREE', joinedDate: new Date(account.createdAt).toLocaleDateString('pt-BR'),
+  nodesCount: 0, confirmedReportsCount: 0, twoFactorEnabled: false,
+});
+
 export const SycronProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // Auth state
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -170,7 +192,15 @@ export const SycronProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState<boolean>(false);
 
   useEffect(() => {
-    if (!supabase) return;
+    if (!supabase) {
+      const sessionEmail = localStorage.getItem(localSessionKey);
+      const account = readLocalAccounts().find((item) => item.email === sessionEmail);
+      if (account) {
+        setCurrentUser(asUser(account));
+        setIsAuthenticated(true);
+      }
+      return;
+    }
     supabase.auth.getSession().then(({ data }) => {
       if (data.session?.user) {
         const user = data.session.user;
@@ -241,24 +271,27 @@ export const SycronProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   };
 
   // Auth methods
-  const login = (email: string, pass: string) => {
-    if (email && pass) {
+  const login = async (email: string, pass: string) => {
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail || !pass) return { success: false, error: 'Informe e-mail e senha.' };
+    try {
       if (isSupabaseConfigured && supabase) {
-        void supabase.auth.signInWithPassword({ email, password: pass });
+        const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password: pass });
+        if (error || !data.session) return { success: false, error: 'E-mail ou senha inválidos.' };
+        const user = data.session.user;
+        setCurrentUser((prev) => ({ ...prev, id: user.id, email: user.email || normalizedEmail, name: user.user_metadata.full_name || user.email?.split('@')[0] || '', role: prev.role === 'User' ? 'Contributor' : prev.role, joinedDate: prev.joinedDate || new Date().toLocaleDateString('pt-BR') }));
+      } else {
+        const account = readLocalAccounts().find((item) => item.email === normalizedEmail);
+        if (!account || account.passwordHash !== await hashPassword(pass)) return { success: false, error: 'E-mail ou senha inválidos.' };
+        localStorage.setItem(localSessionKey, account.email);
+        setCurrentUser(asUser(account));
       }
-      setCurrentUser((prev) => ({
-        ...prev,
-        id: prev.id || `usr-${Date.now().toString(36)}`,
-        name: prev.name || email.split('@')[0],
-        email,
-        role: prev.role === 'User' ? 'Contributor' : prev.role,
-        joinedDate: prev.joinedDate || new Date().toLocaleDateString('pt-BR'),
-      }));
       setIsAuthenticated(true);
-      addAuditLog('USER_LOGIN', `Sessão iniciada (${email})`, 'SUCCESS');
-      return true;
+      addAuditLog('USER_LOGIN', `Sessão iniciada (${normalizedEmail})`, 'SUCCESS');
+      return { success: true };
+    } catch {
+      return { success: false, error: 'Não foi possível autenticar.' };
     }
-    return false;
   };
 
   const loginWithGoogle = async () => {
@@ -272,39 +305,35 @@ export const SycronProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     if (error) throw error;
   };
 
-  const register = (name: string, email: string, phone: string, pass: string, terms: boolean) => {
-    if (name && email && pass && terms) {
+  const register = async (name: string, email: string, phone: string, pass: string, terms: boolean) => {
+    const normalizedEmail = normalizeEmail(email);
+    if (!name.trim() || !normalizedEmail || !pass || !terms) return { success: false, error: 'Preencha todos os campos obrigatórios.' };
+    try {
       if (isSupabaseConfigured && supabase) {
-        void supabase.auth.signUp({
-          email,
-          password: pass,
-          options: { data: { full_name: name, phone } },
-        });
+        const { data, error } = await supabase.auth.signUp({ email: normalizedEmail, password: pass, options: { data: { full_name: name.trim(), phone } } });
+        if (error) return { success: false, error: 'Não foi possível criar a conta.' };
+        if (!data.session) return { success: false, error: 'Confirme o e-mail enviado para ativar sua conta.' };
+        setCurrentUser((prev) => ({ ...prev, id: data.session.user.id, name: name.trim(), email: normalizedEmail, phone, role: 'Contributor', joinedDate: new Date().toLocaleDateString('pt-BR') }));
+      } else {
+        const accounts = readLocalAccounts();
+        if (accounts.some((item) => item.email === normalizedEmail)) return { success: false, error: 'Este e-mail já está cadastrado. Faça login.' };
+        const account: LocalAccount = { id: `usr-${Date.now().toString(36)}`, name: name.trim(), email: normalizedEmail, phone, passwordHash: await hashPassword(pass), createdAt: new Date().toISOString() };
+        localStorage.setItem(localAccountsKey, JSON.stringify([...accounts, account]));
+        localStorage.setItem(localSessionKey, account.email);
+        setCurrentUser(asUser(account));
       }
-      const newUser: User = {
-        id: `usr-${Date.now().toString(36)}`,
-        name,
-        email,
-        phone,
-        role: 'Contributor',
-        region: '',
-        plan: 'FREE',
-        joinedDate: new Date().toLocaleDateString('pt-BR'),
-        nodesCount: 0,
-        confirmedReportsCount: 0,
-        twoFactorEnabled: false,
-      };
-      setCurrentUser(newUser);
       setIsAuthenticated(true);
-      addAuditLog('USER_REGISTER', `Conta criada com sucesso: ${email}`, 'SUCCESS');
-      return true;
+      addAuditLog('USER_REGISTER', `Conta criada com sucesso: ${normalizedEmail}`, 'SUCCESS');
+      return { success: true };
+    } catch {
+      return { success: false, error: 'Não foi possível criar a conta.' };
     }
-    return false;
   };
 
   const logout = () => {
     addAuditLog('USER_LOGOUT', 'Sessão encerrada pelo usuário', 'SUCCESS');
     setIsAuthenticated(false);
+    localStorage.removeItem(localSessionKey);
   };
 
   const switchUserRole = (role: UserRole) => {

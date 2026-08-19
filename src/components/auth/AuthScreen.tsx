@@ -42,7 +42,7 @@ export const AuthScreen: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
@@ -56,16 +56,12 @@ export const AuthScreen: React.FC = () => {
     }
 
     setIsLoading(true);
-    setTimeout(() => {
-      const ok = login(loginEmail, loginPassword);
-      setIsLoading(false);
-      if (!ok) {
-        setErrorMsg('Credenciais inválidas. Verifique os dados informados.');
-      }
-    }, 400);
+    const result = await login(loginEmail, loginPassword);
+    setIsLoading(false);
+    if (!result.success) setErrorMsg(result.error || 'Credenciais inválidas. Verifique os dados informados.');
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
@@ -95,13 +91,9 @@ export const AuthScreen: React.FC = () => {
     }
 
     setIsLoading(true);
-    setTimeout(() => {
-      const ok = register(regName, regEmail, regPhone, regPassword, acceptTerms);
-      setIsLoading(false);
-      if (!ok) {
-        setErrorMsg('Falha ao cadastrar na rede SYCRON.');
-      }
-    }, 500);
+    const result = await register(regName, regEmail, regPhone, regPassword, acceptTerms);
+    setIsLoading(false);
+    if (!result.success) setErrorMsg(result.error || 'Falha ao cadastrar na rede SYCRON.');
   };
 
   const handleForgotSubmit = (e: React.FormEvent) => {
