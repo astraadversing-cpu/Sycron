@@ -9,6 +9,28 @@ type AuthListener = (event: string, session: SupabaseSession | null) => void;
 const sessionKey = 'sycron.supabase.session';
 const listeners = new Set<AuthListener>();
 
+const restoreOAuthSessionFromUrl = () => {
+  const hash = new URLSearchParams(window.location.hash.slice(1));
+  const accessToken = hash.get('access_token');
+  if (!accessToken) return;
+
+  try {
+    const payload = JSON.parse(atob(accessToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    const session: SupabaseSession = {
+      access_token: accessToken,
+      user: {
+        id: payload.sub,
+        email: payload.email,
+        user_metadata: payload.user_metadata || {},
+      },
+    };
+    localStorage.setItem(sessionKey, JSON.stringify(session));
+    window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`);
+  } catch {
+    // Invalid OAuth callback data is ignored and the user remains signed out.
+  }
+};
+
 const request = async (path: string, options: RequestInit = {}) => {
   if (!supabaseUrl || !supabaseAnonKey) throw new Error('Configure o Supabase no arquivo .env.');
   const response = await fetch(`${supabaseUrl}/auth/v1/${path}`, {
@@ -56,3 +78,5 @@ export const supabase = isSupabaseConfigured
       },
     }
   : null;
+
+if (isSupabaseConfigured && typeof window !== 'undefined') restoreOAuthSessionFromUrl();
