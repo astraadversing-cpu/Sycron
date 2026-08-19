@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: #000000;
+    color: #FFFFFF;
+    margin: 0;
+    overflow-x: hidden;
+  }
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+.font-sans {
+  font-family: var(--font-sans);
+}
+
+/* Tactical & Refined Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #050505;
+}
+::-webkit-scrollbar-thumb {
+  background: #252525;
+  border-radius: 1px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #383838;
+}
+
+/* Professional Polish Radial Dot Pattern */
+.bg-dot-pattern {
+  background-size: 32px 32px;
+  background-image: radial-gradient(#252525 1px, transparent 1px);
+}
+
+.bg-grid-pattern {
+  background-size: 32px 32px;
+  background-image: 
+    linear-gradient(to right, rgba(37, 37, 37, 0.6) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(37, 37, 37, 0.6) 1px, transparent 1px);
+}
+
+/* Subtle print styles for PDF reporting */
+@media print {
+  body {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

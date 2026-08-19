@@ -1,0 +1,6 @@
+{
+  "name": "SYCRON - Intelligence & Cybersecurity Platform",
+  "description": "Professional intelligence and cybersecurity network platform for real-time monitoring, collaborative data mind mapping, threat detection, and incident response.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
